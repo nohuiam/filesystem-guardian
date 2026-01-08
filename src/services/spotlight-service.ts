@@ -10,7 +10,7 @@ import { promisify } from 'util';
 import { stat } from 'fs/promises';
 import { basename } from 'path';
 import type { SpotlightResult, SpotlightSearchOutput, ReindexResult } from '../types.js';
-import { validatePath, isPathAllowed } from '../utils/path-validator.js';
+import { validatePath, isPathAllowed, sanitizeErrorMessage } from '../utils/path-validator.js';
 
 const exec = promisify(execFile);
 
@@ -54,8 +54,8 @@ export async function spotlightSearch(
         const validatedDir = validatePath(dir);
         args.push('-onlyin', validatedDir);
       } catch {
-        // Skip invalid scope directories
-        console.warn(`[spotlight] Skipping invalid scope: ${dir}`);
+        // SECURITY: Don't log actual path to prevent information leakage
+        console.warn(`[spotlight] Skipping invalid scope directory`);
       }
     }
   }
@@ -85,7 +85,8 @@ export async function spotlightSearch(
       truncated
     };
   } catch (error) {
-    throw new Error(`Spotlight search failed: ${(error as Error).message}`);
+    // SECURITY: Sanitize error message to prevent path leakage
+    throw new Error(`Spotlight search failed: ${sanitizeErrorMessage((error as Error).message)}`);
   }
 }
 
@@ -202,10 +203,11 @@ export async function spotlightReindex(filePath: string): Promise<ReindexResult>
       message: 'Reindex queued successfully'
     };
   } catch (error) {
+    // SECURITY: Sanitize error message to prevent path leakage
     return {
       path: validatedPath,
       queued: false,
-      message: `Reindex failed: ${(error as Error).message}`
+      message: `Reindex failed: ${sanitizeErrorMessage((error as Error).message)}`
     };
   }
 }

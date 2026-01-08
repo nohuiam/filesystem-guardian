@@ -9,7 +9,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { XattrResult, XattrValue, SetXattrResult, ListXattrResult, XattrEncoding } from '../types.js';
 import { getDatabase } from '../database/schema.js';
-import { validatePath } from '../utils/path-validator.js';
+import { validatePath, sanitizeErrorMessage } from '../utils/path-validator.js';
 
 const exec = promisify(execFile);
 
@@ -42,7 +42,8 @@ export async function listXattrs(filePath: string): Promise<ListXattrResult> {
       return { path: validatedPath, attributes: [], count: 0 };
     }
 
-    throw new Error(`Failed to list xattrs: ${message}`);
+    // SECURITY: Sanitize error message to prevent path leakage
+    throw new Error(`Failed to list xattrs: ${sanitizeErrorMessage(message)}`);
   }
 }
 
@@ -74,8 +75,8 @@ export async function getXattrs(filePath: string, attribute?: string, decodePlis
         attributes[attrName] = decoded;
         db.logXattrOperation('get', validatedPath, attrName, true);
       } catch (err) {
-        // Skip attributes we can't read
-        console.error(`[filesystem-guardian] Failed to read ${attrName}: ${(err as Error).message}`);
+        // SECURITY: Skip attributes we can't read, sanitize error message
+        console.error(`[filesystem-guardian] Failed to read attribute: ${sanitizeErrorMessage((err as Error).message)}`);
       }
     }
 
@@ -134,7 +135,8 @@ export async function setXattrs(
         db.logXattrOperation('set', validatedPath, name, true);
       }
     } catch (err) {
-      failed.push({ name, error: (err as Error).message });
+      // SECURITY: Sanitize error message to prevent path leakage
+      failed.push({ name, error: sanitizeErrorMessage((err as Error).message) });
       db.logXattrOperation('set', validatedPath, name, false);
     }
   }

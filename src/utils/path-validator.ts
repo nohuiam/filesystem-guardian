@@ -110,3 +110,29 @@ export function isPathAllowed(filePath: string): boolean {
 export function filterAllowedPaths(paths: string[]): string[] {
   return paths.filter(p => isPathAllowed(p));
 }
+
+/**
+ * Sanitize error messages to prevent path information leakage
+ * Removes any file paths from error messages to prevent exposing
+ * information about files outside the sandbox
+ * @param message - Error message to sanitize
+ * @returns Sanitized error message
+ */
+export function sanitizeErrorMessage(message: string): string {
+  if (!message || typeof message !== 'string') {
+    return 'Unknown error';
+  }
+
+  // Pattern to match file paths (Unix-style)
+  // Matches: /path/to/file, ./path, ../path
+  const pathPattern = /(?:\/[\w\-._]+)+|\.\.?\/[\w\-._/]*/g;
+
+  // Replace paths with generic placeholder
+  let sanitized = message.replace(pathPattern, '[path]');
+
+  // Also strip any remaining path-like patterns that might have escaped
+  // Match patterns like "No such file or directory: /some/path"
+  sanitized = sanitized.replace(/:\s*\[path\]/g, '');
+
+  return sanitized;
+}

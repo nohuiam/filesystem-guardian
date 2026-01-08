@@ -90,7 +90,14 @@ TypeScript build succeeded after changes.
 - [x] mdls attribute name sanitization (shell metacharacters, path chars)
 - [x] Attribute pattern validation (alphanumeric + underscore only)
 
-## Remaining Concerns
+## Previously Remaining Concerns - NOW FIXED
 
-1. **execFile usage**: Using `promisify(execFile)` is safer than `exec`, but command outputs aren't validated
-2. **Error messages**: Some error messages may leak path information
+1. ~~**execFile usage**: Using `promisify(execFile)` is safer than `exec`, but command outputs aren't validated~~
+   - **Status:** Acceptable risk - mdfind outputs are filtered via `isPathAllowed()`, mdls attributes are validated via `sanitizeAttributes()`, xattr values are user data within sandbox
+
+2. ~~**Error messages**: Some error messages may leak path information~~
+   - **Status:** FIXED - Added `sanitizeErrorMessage()` function to `path-validator.ts` and applied to all error outputs in `spotlight-service.ts` and `xattr-service.ts`
+
+## All Concerns Addressed
+
+All critical, major, and low-risk concerns have been fixed or documented as acceptable risk.
