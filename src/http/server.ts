@@ -4,14 +4,20 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { randomUUID } from 'crypto';
 import { getXattrs, setXattrs, listXattrs } from '../services/xattr-service.js';
 import { spotlightSearch, spotlightReindex } from '../services/spotlight-service.js';
 import { createWatch, stopWatch, getActiveWatches } from '../services/fsevents-service.js';
-import { getRecentOperations } from '../database/schema.js';
+import { getRecentOperations, getDatabase } from '../database/schema.js';
 import type { FsEventType } from '../types.js';
 import { TOOLS, TOOL_HANDLERS } from '../index.js';
 
 const PORT = 8026;
+
+// In-memory rate limiting (Linus audit compliance)
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT_WINDOW = 60000; // 1 minute
+const RATE_LIMIT_MAX = 100;
 
 interface RouteHandler {
   (req: IncomingMessage, res: ServerResponse, body: string): Promise<void>;
@@ -26,6 +32,29 @@ const routes: Record<string, Record<string, RouteHandler>> = {
         timestamp: new Date().toISOString(),
         ports: { http: 8026, ws: 9026, udp: 3026 }
       });
+    },
+
+    '/health/ready': async (_req, res) => {
+      try {
+        const db = getDatabase();
+        // If we can get database, we're ready
+        sendJson(res, 200, {
+          ready: true,
+          server: 'filesystem-guardian',
+          checks: {
+            database: true
+          }
+        });
+      } catch (error) {
+        sendJson(res, 503, {
+          ready: false,
+          server: 'filesystem-guardian',
+          checks: {
+            database: false
+          },
+          error: 'Database not ready'
+        });
+      }
     },
 
     '/api/watches': async (_req, res) => {
@@ -115,12 +144,32 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Request-ID');
+
+  // Request ID tracing (Linus audit compliance)
+  const requestId = (req.headers['x-request-id'] as string) || randomUUID();
+  res.setHeader('X-Request-ID', requestId);
 
   if (method === 'OPTIONS') {
     res.writeHead(204);
     res.end();
     return;
+  }
+
+  // Rate limiting (Linus audit compliance) - skip for health checks
+  if (!url.startsWith('/health')) {
+    const clientIp = req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const entry = rateLimitMap.get(clientIp);
+
+    if (!entry || now > entry.resetTime) {
+      rateLimitMap.set(clientIp, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    } else if (entry.count >= RATE_LIMIT_MAX) {
+      sendJson(res, 429, { error: 'Too many requests', retryAfter: Math.ceil((entry.resetTime - now) / 1000) });
+      return;
+    } else {
+      entry.count++;
+    }
   }
 
   try {
